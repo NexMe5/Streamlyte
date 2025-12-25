@@ -1,0 +1,349 @@
+// Streamlyte - Influencer Analytics Platform
+// Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  passwordHash    String
+  avatar          String?
+  timezone        String    @default("UTC")
+  niche           String?   // e.g., "fitness", "tech", "lifestyle"
+  primaryPlatform String?   // Main platform the user focuses on
+  streakCount     Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  socialAccounts    SocialAccount[]
+  metricSnapshots   MetricSnapshot[]
+  goals             Goal[]
+  tasks             Task[]
+  contentIdeas      ContentIdea[]
+  campaigns         Campaign[]
+  competitorProfiles CompetitorProfile[]
+  sessions          Session[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// ============================================
+// SOCIAL ACCOUNTS & INTEGRATION
+// ============================================
+
+enum Platform {
+  instagram
+  linkedin
+  youtube
+  twitter
+}
+
+enum AccountStatus {
+  active
+  disconnected
+  expired
+  error
+}
+
+model SocialAccount {
+  id           String        @id @default(cuid())
+  userId       String
+  platform     Platform
+  handle       String        // @username or channel name
+  displayName  String?
+  profileUrl   String?
+  accessToken  String?       @db.Text
+  refreshToken String?       @db.Text
+  tokenExpiry  DateTime?
+  status       AccountStatus @default(active)
+  autoSync     Boolean       @default(true)
+  lastSyncedAt DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  metricSnapshots MetricSnapshot[]
+  contentItems    ContentItem[]
+
+  @@unique([userId, platform, handle])
+  @@map("social_accounts")
+}
+
+// ============================================
+// METRICS & ANALYTICS
+// ============================================
+
+model MetricSnapshot {
+  id              String   @id @default(cuid())
+  userId          String
+  socialAccountId String
+  date            DateTime @db.Date
+  
+  // Core metrics
+  reach           Int      @default(0)
+  impressions     Int      @default(0)
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  shares          Int      @default(0)
+  saves           Int      @default(0)
+  followers       Int      @default(0)
+  views           Int      @default(0)
+  clicks          Int      @default(0)
+  engagementRate  Float    @default(0)
+  
+  // Raw platform data
+  platformRawJson Json?
+  
+  createdAt       DateTime @default(now())
+
+  // Relations
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, date])
+  @@index([userId, date])
+  @@map("metric_snapshots")
+}
+
+// ============================================
+// CONTENT
+// ============================================
+
+enum ContentType {
+  post
+  reel
+  short
+  story
+  article
+  video
+  tweet
+}
+
+model ContentItem {
+  id              String      @id @default(cuid())
+  socialAccountId String
+  platformPostId  String      // ID from the platform
+  title           String?     @db.Text
+  type            ContentType
+  caption         String?     @db.Text
+  publishedAt     DateTime
+  url             String?     @db.Text
+  thumbnail       String?     @db.Text
+  
+  // Metrics at time of fetch
+  reach           Int         @default(0)
+  impressions     Int         @default(0)
+  likes           Int         @default(0)
+  comments        Int         @default(0)
+  shares          Int         @default(0)
+  saves           Int         @default(0)
+  views           Int         @default(0)
+  clicks          Int         @default(0)
+  engagementRate  Float       @default(0)
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, platformPostId])
+  @@index([publishedAt])
+  @@map("content_items")
+}
+
+// ============================================
+// GOALS & TASKS
+// ============================================
+
+enum MetricType {
+  reach
+  followers
+  posts
+  engagement
+  views
+  revenue
+  impressions
+}
+
+enum Period {
+  daily
+  weekly
+  monthly
+  quarterly
+}
+
+enum GoalStatus {
+  active
+  completed
+  failed
+  paused
+}
+
+model Goal {
+  id           String     @id @default(cuid())
+  userId       String
+  metricType   MetricType
+  targetValue  Float
+  currentValue Float      @default(0)
+  period       Period
+  startDate    DateTime
+  endDate      DateTime
+  status       GoalStatus @default(active)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Relations
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@index([userId, status])
+  @@map("goals")
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  userId      String
+  goalId      String?
+  title       String
+  description String?      @db.Text
+  dueDate     DateTime?
+  status      TaskStatus   @default(todo)
+  priority    TaskPriority @default(medium)
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal Goal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([dueDate])
+  @@map("tasks")
+}
+
+// ============================================
+// CONTENT IDEAS & AI FEATURES
+// ============================================
+
+enum IdeaStatus {
+  suggested
+  saved
+  used
+  dismissed
+}
+
+model ContentIdea {
+  id                String     @id @default(cuid())
+  userId            String
+  platform          Platform?
+  topic             String
+  suggestedCaption  String?    @db.Text
+  suggestedHashtags String?    @db.Text // JSON array of hashtags
+  confidenceScore   Float      @default(0)
+  status            IdeaStatus @default(suggested)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("content_ideas")
+}
+
+// ============================================
+// CAMPAIGNS & SPONSORSHIPS
+// ============================================
+
+enum CampaignStatus {
+  draft
+  negotiating
+  active
+  completed
+  cancelled
+}
+
+model Campaign {
+  id            String         @id @default(cuid())
+  userId        String
+  brandName     String
+  brandLogo     String?
+  startDate     DateTime?
+  endDate       DateTime?
+  deliverables  String?        @db.Text // JSON array of deliverables
+  agreedAmount  Float?
+  expectedReach Int?
+  actualReach   Int?
+  status        CampaignStatus @default(draft)
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("campaigns")
+}
+
+// ============================================
+// COMPETITOR ANALYSIS
+// ============================================
+
+model CompetitorProfile {
+  id              String   @id @default(cuid())
+  userId          String
+  platform        Platform
+  handle          String
+  displayName     String?
+  notes           String?  @db.Text
+  lastSyncedAt    DateTime?
+  summaryStatsJson Json?   // Store follower count, avg engagement, etc.
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform, handle])
+  @@map("competitor_profiles")
+}
