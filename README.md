@@ -165,4 +165,5 @@ Based on the Streamlyte logo:
 
 ## License
 
-MIT
+Educational and Research purpose only
+
