@@ -165,5 +165,5 @@ Based on the Streamlyte logo:
 
 ## License
 
-Educational and Research purpose only
+Educational project 
 
